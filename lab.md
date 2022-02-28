@@ -108,7 +108,10 @@ root@controller:~# vim /etc/memcached.conf
 ```sh
 root@controller:~# service memcached restart
 ```
-
+#### 8. Cài đặt dịch vụ openstack-client để sử dụng client openstack
+```sh
+root@controller:~# apt install python3-openstackclient
+```
 
 ### Trên tất cả các node còn lại
 #### 1. Cấu hình file host
@@ -143,8 +146,207 @@ MS Name/IP address         Stratum Poll Reach LastRx Last sample
 ^* controller                    3   6   177    14   +324us[+3022us] +/-   27ms
 ```
 
+
 #### 3. Add repo Openstack
 
 ```sh
 root@controller:~# add-apt-repository cloud-archive:victoria
+```
+
+#### 4. Cài đặt dịch vụ openstack-client để sử dụng client openstack
+```sh
+root@compute:~# apt install python3-openstackclient
+```
+# Cài đặt dịch vụ Openstack
+
+## Cài đặt dịch vụ identity (Keystone)
+
+- Khởi tạo database cho keystone
+```sh
+root@controller:~# mysql
+MariaDB [(none)]> CREATE DATABASE keystone;
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'localhost'  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON keystone.* TO 'keystone'@'%'  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> exit
+```
+
+- Cài đặt dịch vụ keystone
+
+```sh
+root@controller:~# apt install keystone
+```
+
+- Chỉnh sửa file cấu hình dịch vụ keystone
+
+```sh
+root@controller:~#  vim /etc/keystone/keystone.conf
+
+[database] //cấu hình quyền truy cập database
+connection = mysql+pymysql://keystone:lean15998@controller/keystone
+[token] //cấu hình nhà cung cấp token là fernet
+provider = fernet
+```
+
+- Populate the Identity service database
+
+```sh
+root@controller:~# su -s /bin/sh -c "keystone-manage db_sync" keystone
+```
+
+- 	Khởi tạo kho khoá fernet
+```sh
+root@controller:~# keystone-manage fernet_setup --keystone-user keystone --keystone-group keystone
+root@controller:~# keystone-manage credential_setup --keystone-user keystone --keystone-group keystone
+```
+
+
+- Bootstrap dịch vụ
+
+```sh
+root@controller:~# keystone-manage bootstrap --bootstrap-password lean15998 \
+>   --bootstrap-admin-url http://controller:5000/v3/ \
+>   --bootstrap-internal-url http://controller:5000/v3/ \
+>   --bootstrap-public-url http://controller:5000/v3/ \
+>   --bootstrap-region-id RegionOne
+```
+
+- Cấu hình Apache
+
+```sh
+root@controller:~# vim /etc/apache2/apache2.conf
+ServerName controller
+```
+
+- Khởi động lại dịch vụ
+
+```sh
+root@controller:~# service apache2 restart
+```
+
+- 	Tạo script chứa thông tin đăng nhập vào dịch vụ identity
+
+```sh
+-	Tạo script chứa thông tin đăng nhập vào dịch vụ identity
+root@controller:~# vim admin-openrc
+
+export OS_PROJECT_DOMAIN_NAME=Default
+export OS_USER_DOMAIN_NAME=Default
+export OS_PROJECT_NAME=admin
+export OS_USERNAME=admin
+export OS_PASSWORD=lean15998
+export OS_AUTH_URL=http://controller:5000/v3
+export OS_IDENTITY_API_VERSION=3
+export OS_IMAGE_API_VERSION=2
+```
+
+-	Khởi tạo project service
+
+```sh
+root@controller:~# openstack project create --domain default \
+>   --description "Service Project" service
+```
+- Xem thông tin project
+
+```sh
+root@controller:~# openstack project show service
++-------------+----------------------------------+
+| Field       | Value                            |
++-------------+----------------------------------+
+| description | Service Project                  |
+| domain_id   | default                          |
+| enabled     | True                             |
+| id          | 8dd57fe0ce7e49dc9652d40381c7f1f2 |
+| is_domain   | False                            |
+| name        | service                          |
+| options     | {}                               |
+| parent_id   | default                          |
+| tags        | []                               |
++-------------+----------------------------------+
+```
+
+## Cài đặt dịch vụ image (Glance)
+
+- Khởi tạo database cho glance
+```sh
+root@controller:~# mysql
+MariaDB [(none)]> CREATE DATABASE glance;
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON glance.* TO 'glance'@'localhost'  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON glance.* TO 'glance'@'%'    IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> exit
+```
+
+- 	Tạo thông tin xác thực dịch vụ cho glance
+
+```sh
+root@controller:~# openstack user create --domain default --password-prompt glance
+root@controller:~# openstack role add --project service --user glance admin
+root@controller:~# openstack service create --name glance \
+>   --description "OpenStack Image" image
+root@controller:~# openstack endpoint create --region RegionOne \
+>   image public http://controller:9292
+root@controller:~# openstack endpoint create --region RegionOne \
+>   image internal http://controller:9292
+root@controller:~# openstack endpoint create --region RegionOne \
+>   image admin http://controller:9292
+```
+
+- 	Cài đặt dịch vụ glance
+```sh
+root@controller:~# apt install glance
+```
+
+- Chỉnh sửa file cấu hình dịch vụ glance
+
+```sh
+root@controller:~# vim /etc/glance/glance-api.conf
+
+[database]  //truy cập CSDL
+connection = mysql+pymysql://glance:lean15998@controller/glance
+
+[keystone_authtoken] //thông tin truy cập keystone
+www_authenticate_uri = http://controller:5000
+auth_url = http://controller:5000
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = Default
+user_domain_name = Default
+project_name = service
+username = glance
+password = lean15998
+
+[paste_deploy]
+flavor = keystone
+
+[glance_store] //vị trí lưu image
+stores = file,http
+default_store = file
+filesystem_store_datadir = /var/lib/glance/images/
+
+```
+
+- Populate the Identity service database
+
+```sh
+root@controller:~# su -s /bin/sh -c "glance-manage db_sync" glance
+```
+
+- Khởi động lại dịch vụ
+
+```sh
+root@controller:~# service glance-api restart
+```
+
+-	Tải image và upload lên dịch vụ glance
+```
+root@controller:~#wget http://download.cirros-cloud.net/0.4.0/cirros-0.4.0-x86_64-disk.img
+root@controller:~# glance image-create --name "cirros" \
+>   --file cirros-0.4.0-x86_64-disk.img \
+>   --disk-format qcow2 --container-format bare \
+>   --visibility=public
+root@controller:~# openstack image list
++--------------------------------------+--------+--------+
+| ID                                   | Name   | Status |
++--------------------------------------+--------+--------+
+| 33e9b1ef-5738-4aa2-9ba5-d4008742b543 | cirros | active |
++--------------------------------------+--------+--------+
 ```
