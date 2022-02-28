@@ -9,7 +9,7 @@
    |  MariaDB    RabbitMQ  |   |        L2 Agent       |   |        Libvirt        |   |     Cinder-volume     |
    |  Memcached  Apache2   |   |        L3 Agent       |   |     Nova Compute      |   |                       |
    |  Keystone   Glance    |   |     Metadata Agent    |   |        L2 Agent       |   |                       |
-   |  Nova API             |   |                       |   |                       |   |                       |
+   | Placement API Nova API|   |                       |   |                       |   |                       |
    |  Neutron Server       |   |                       |   |                       |   |                       |
    |  Metadata Agent       |   |                       |   |                       |   |                       | 
    +-----------------------+   +-----------------------+   +----------+------------+   +-----------------------+
