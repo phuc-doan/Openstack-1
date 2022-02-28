@@ -190,7 +190,7 @@ connection = mysql+pymysql://keystone:lean15998@controller/keystone
 provider = fernet
 ```
 
-- Populate the Identity service database
+- Populate vào CSDL dịch vụ keystone
 
 ```sh
 root@controller:~# su -s /bin/sh -c "keystone-manage db_sync" keystone
@@ -327,7 +327,7 @@ filesystem_store_datadir = /var/lib/glance/images/
 
 ```
 
-- Populate the Identity service database
+- Populate vào CSDL dịch vụ glance
 
 ```sh
 root@controller:~# su -s /bin/sh -c "glance-manage db_sync" glance
@@ -353,3 +353,75 @@ root@controller:~# openstack image list
 | 33e9b1ef-5738-4aa2-9ba5-d4008742b543 | cirros | active |
 +--------------------------------------+--------+--------+
 ```
+
+
+## Cài đặt dịch vụ Placement
+
+- Khởi tạo database cho placement
+```sh
+root@controller:~# mysql
+MariaDB [(none)]> CREATE DATABASE placement;
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON placement.* TO 'placement'@'localhost'  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON placement.* TO 'placement'@'%'  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> exit
+```
+
+- 	Tạo thông tin xác thực dịch vụ cho placement
+
+```sh
+root@controller:~# openstack user create --domain default --password-prompt placement
+root@controller:~# openstack role add --project service --user placement admin
+root@controller:~# openstack service create --name placement placement
+root@controller:~# openstack endpoint create --region RegionOne \
+>   placement public http://controller:8778
+root@controller:~# openstack endpoint create --region RegionOne \
+>   placement internal http://controller:8778
+root@controller:~# openstack endpoint create --region RegionOne \
+>   placement admin http://controller:8778
+```
+
+- 	Cài đặt dịch vụ placement
+```sh
+root@controller:~# apt install placement-api
+```
+
+- Chỉnh sửa file cấu hình dịch vụ placement
+
+```sh
+root@controller:~# vim  /etc/placement/placement.conf
+
+[placement_database] //truy cập CSDL
+connection = mysql+pymysql://placement:lean15998@controller/placement
+
+[api]
+auth_strategy = keystone
+
+[keystone_authtoken] //thông tin truy cập keystone
+auth_url = http://controller:5000/v3
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = Default
+user_domain_name = Default
+project_name = service
+username = placement
+password = lean15998
+```
+
+
+- Populate vào CSDL placement
+
+```sh
+root@controller:~# su -s /bin/sh -c "placement-manage db sync" placement
+```
+
+- Khởi động lại dịch vụ
+
+```sh
+root@controller:~# service apache2 restart
+```
+
+
+
+
+
+
