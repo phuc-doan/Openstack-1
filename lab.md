@@ -15,14 +15,14 @@
    +-----------------------+   +-----------------------+   +-----------------------+   +-----------------------+
 ```
 
-## Cài đặt dịch vụ bổ trợ cho Openstack
-### Trên node Controller
-#### Cấu hình file host
+# Cài đặt dịch vụ bổ trợ cho Openstack
+## Trên node Controller
+#### 1. Cấu hình file host
 ```sh
 root@controller:~# vim /etc/hosts
 10.0.0.30       controller
 ```
-#### Cài đặt Chrony (Đồng bộ hoá thời gian)
+#### 2. Cài đặt Chrony (Đồng bộ hoá thời gian)
 
 ```sh
 root@controller:~# apt install chrony -y
@@ -32,7 +32,7 @@ root@controller:~# apt install chrony -y
 
 ```sh
 root@controller:~# vim /etc/chrony/chrony.conf
-pool controller iburst   //Server NTP
+pool vn.pool.ntp.org iburst   //Server NTP
 allow 10.0.0.0/24        //Cho phép các node kết nối với chrony deamon
 ```
 
@@ -41,13 +41,13 @@ allow 10.0.0.0/24        //Cho phép các node kết nối với chrony deamon
 root@controller:~# service chrony restart
 ```
 
-#### Add repo Openstack
+#### 3. Add repo Openstack
 
 ```sh
 root@controller:~# add-apt-repository cloud-archive:victoria
 ```
 
-#### Cài đặt MariaDB
+#### 4. Cài đặt MariaDB
 
 - Các dịch vụ của Openstack đều sử dụng SQL database để lưu trữ thông tin
 
@@ -75,7 +75,7 @@ character-set-server = utf8
 root@controller:~# service mysql restart
 ```
 
-#### Cài đặt RabbitMQ
+#### 5. Cài đặt RabbitMQ
 
 - Sử dụng để điều phối hoạt động và thông tin trạng thái của các dịch vụ Openstack
 
@@ -89,7 +89,7 @@ root@controller:~# rabbitmqctl add_user openstack RABBIT_PASS
 root@controller:~# rabbitmqctl set_permissions openstack ".*" ".*" ".*"
 ```
 
-#### Cài đặt Memcache
+#### 6. Cài đặt Memcache
 
 - Cơ chế xác thực dịch vụ cho các dịch vụ sử dụng Memcached để lưu cache tokens
 ```sh
@@ -107,4 +107,44 @@ root@controller:~# vim /etc/memcached.conf
 
 ```sh
 root@controller:~# service memcached restart
+```
+
+
+### Trên tất cả các node còn lại
+#### 1. Cấu hình file host
+```sh
+root@compute:~# vim /etc/hosts
+10.0.0.30       controller
+```
+#### 2. Cài đặt Chrony (Đồng bộ hoá thời gian)
+
+```sh
+root@compute:~# apt install chrony -y
+```
+
+- Cấu hình chrony
+
+```sh
+root@controller:~# vim /etc/chrony/chrony.conf
+pool controller iburst   //Server NTP
+```
+
+- Khởi động lại dịch vụ
+```sh
+root@controller:~# service chrony restart
+```
+
+- Kiểm tra hoạt động
+```sh
+root@compute:~# chronyc sources
+210 Number of sources = 1
+MS Name/IP address         Stratum Poll Reach LastRx Last sample
+===============================================================================
+^* controller                    3   6   177    14   +324us[+3022us] +/-   27ms
+```
+
+#### 3. Add repo Openstack
+
+```sh
+root@controller:~# add-apt-repository cloud-archive:victoria
 ```
