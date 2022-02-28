@@ -19,7 +19,7 @@
 ```
 
 # Cài đặt dịch vụ bổ trợ cho Openstack
-## Trên node Controller
+### Trên node Controller
 #### 1. Cấu hình file host
 ```sh
 root@controller:~# vim /etc/hosts
@@ -162,7 +162,7 @@ root@compute:~# apt install python3-openstackclient
 ```
 # Cài đặt dịch vụ Openstack
 
-## Cài đặt dịch vụ identity (Keystone)
+### Cài đặt dịch vụ identity (Keystone)
 
 - Khởi tạo database cho keystone
 ```sh
@@ -267,7 +267,7 @@ root@controller:~# openstack project show service
 +-------------+----------------------------------+
 ```
 
-## Cài đặt dịch vụ image (Glance)
+### Cài đặt dịch vụ image (Glance)
 
 - Khởi tạo database cho glance
 ```sh
@@ -355,7 +355,7 @@ root@controller:~# openstack image list
 ```
 
 
-## Cài đặt dịch vụ Placement
+### Cài đặt dịch vụ Placement
 
 - Khởi tạo database cho placement
 ```sh
