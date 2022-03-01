@@ -1128,4 +1128,98 @@ root@controller:~# openstack subnet create public-subnet \
 root@controller:~# openstack router set router01 --external-gateway public
 ```
 
+### Cài đặt dịch vụ Storage (Cinder)
 
+
+#### Trên node Controller
+
+- Khởi tạo database cho cinder
+```sh
+root@controller:~# mysql
+MariaDB [(none)]> CREATE DATABASE cinder;
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON cinder.* TO 'cinder'@'localhost' \
+  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON cinder.* TO 'cinder'@'%' \
+  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> exit
+```
+
+- 	Tạo thông tin xác thực dịch vụ cho cinder
+
+```sh
+root@controller:~# openstack user create --domain default --password-prompt cinder
+root@controller:~# openstack role add --project service --user cinder admin
+root@controller:~# openstack service create --name cinderv2 \
+  --description "OpenStack Block Storage" volumev2
+root@controller:~# openstack service create --name cinderv3 \
+  --description "OpenStack Block Storage" volumev3
+root@controller:~# openstack endpoint create --region RegionOne \
+  volumev2 public http://controller:8776/v2/%\(project_id\)s
+root@controller:~# openstack endpoint create --region RegionOne \
+  volumev2 internal http://controller:8776/v2/%\(project_id\)s
+root@controller:~# openstack endpoint create --region RegionOne \
+  volumev2 admin http://controller:8776/v2/%\(project_id\)s
+root@controller:~# openstack endpoint create --region RegionOne \
+  volumev3 public http://controller:8776/v3/%\(project_id\)s
+root@controller:~# openstack endpoint create --region RegionOne \
+  volumev3 internal http://controller:8776/v3/%\(project_id\)s
+root@controller:~# openstack endpoint create --region RegionOne \
+  volumev3 admin http://controller:8776/v3/%\(project_id\)s
+```
+
+- 	Cài đặt dịch vụ cinder
+```sh
+root@controller:~# apt install cinder-api cinder-scheduler
+```
+
+- Chỉnh sửa file cấu hình dịch vụ cinder
+
+```sh
+root@controller:~# vim /etc/cinder/cinder.conf
+
+[DEFAULT]
+enabled_backends = lvm
+transport_url = rabbit://openstack:lean15998@controller
+my_ip = 10.0.0.30
+
+[database]
+connection = mysql+pymysql://cinder:lean15998@controller/cinder
+
+[keystone_authtoken]
+www_authenticate_uri = http://controller:5000
+auth_url = http://controller:5000
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = cinder
+password = lean15998
+
+[oslo_concurrency]
+lock_path = /var/lib/cinder/tmp
+```
+
+
+- Populate vào CSDL cinder
+
+```sh
+root@controller:~# su -s /bin/sh -c "cinder-manage db sync" cinder
+```
+
+- Cấu hình nova được sử dụng Block storage
+
+```sh
+root@controller:~# vim /etc/nova/nova.conf
+
+[cinder]
+os_region_name = RegionOne
+```
+
+- Khởi động lại dịch vụ
+
+```sh
+root@controller:~# service nova-api restart
+root@controller:~#  service cinder-scheduler restart
+root@controller:~#  service apache2 restart
+```
