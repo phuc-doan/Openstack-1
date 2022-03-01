@@ -850,7 +850,7 @@ firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
 
 [vxlan]
 enable_vxlan = true
-local_ip = 10.0.0.52
+local_ip = 10.0.0.50
 ```
 
 - Khởi động lại dịch vụ
