@@ -1223,3 +1223,107 @@ root@controller:~# service nova-api restart
 root@controller:~#  service cinder-scheduler restart
 root@controller:~#  service apache2 restart
 ```
+
+
+#### Trên node Storage
+
+- Cài đặt lvm2
+
+```sh
+root@storage:~# apt install lvm2 thin-provisioning-tools
+```
+
+- Khởi tạo Physical volume và volume group
+
+```sh
+root@storage:~# pvcreate /dev/sdb
+root@storage:~# vgcreate cinder-volumes /dev/sdb
+```
+
+- Cấu hình lvm
+
+```sh
+root@storage:~# vim /etc/lvm/lvm.conf 
+
+devices {
+  filter = [ "a/sdb/", "r/.*/"]
+```
+
+- Cài đặt dịch vụ cinder-volume
+
+```sh
+root@storage:~# apt install cinder-volume
+```
+
+- Cấu hình dịch vụ cinder
+
+
+```sh
+root@storage:~# vim /etc/cinder/cinder.conf
+
+[DEFAULT]
+rootwrap_config = /etc/cinder/rootwrap.conf
+api_paste_confg = /etc/cinder/api-paste.ini
+iscsi_helper = tgtadm
+volume_name_template = volume-%s
+volume_group = cinder-volumes
+verbose = True
+auth_strategy = keystone
+state_path = /var/lib/cinder
+lock_path = /var/lock/cinder
+volumes_dir = /var/lib/cinder/volumes
+enabled_backends = lvm
+transport_url = rabbit://openstack:lean15998@controller
+my_ip = 10.0.0.53
+glance_api_servers = http://controller:9292
+
+[database]
+# ...
+connection = mysql+pymysql://cinder:lean15998@controller/cinder
+
+[keystone_authtoken]
+# ...
+www_authenticate_uri = http://controller:5000
+auth_url = http://controller:5000
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = cinder
+password = lean15998
+
+[lvm]
+# ...
+volume_driver = cinder.volume.drivers.lvm.LVMVolumeDriver
+volume_group = cinder-volumes
+target_protocol = iscsi
+target_helper = tgtadm
+
+[oslo_concurrency]
+# ...
+lock_path = /var/lib/cinder/tmp
+```
+
+- Khởi động lại dịch vụ
+
+```sh
+root@storage:~# service tgt restart
+root@storage:~# service cinder-volume restart
+```
+
+
+#### Trên node controller
+
+- Liệt kê các dịch vụ volume
+
+```sh
+root@controller:~# openstack volume service list
++------------------+-------------+------+---------+-------+----------------------------+
+| Binary           | Host        | Zone | Status  | State | Updated At                 |
++------------------+-------------+------+---------+-------+----------------------------+
+| cinder-scheduler | controller  | nova | enabled | up    | 2022-03-01T04:08:44.000000 |
+| cinder-volume    | storage@lvm | nova | enabled | up    | 2022-03-01T04:08:39.000000 |
++------------------+-------------+------+---------+-------+----------------------------+
+```
+
