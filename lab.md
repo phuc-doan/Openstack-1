@@ -13,8 +13,8 @@
    |  Neutron Server       |   |                       |   |                       |   |                       |
    |  Metadata Agent       |   |                       |   |                       |   |                       | 
    +-----------------------+   +-----------------------+   +----------+------------+   +-----------------------+
-                                                                      |
-                                                                 ens33|
+                                           |
+                                      ens33|
 
 ```
 
@@ -622,3 +622,510 @@ root@controller:~# openstack compute service list --service nova-compute
 +----+--------------+------------+------+---------+-------+----------------------------+
 root@controller:~# su -s /bin/sh -c "nova-manage cell_v2 discover_hosts --verbose" nova
 ```
+
+
+### Cài đặt dịch vụ Network (Neutron)
+
+#### Trên node Controller
+
+- Khởi tạo database cho neutron
+```sh
+root@controller:~# mysql
+MariaDB [(none)] CREATE DATABASE neutron;
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'localhost' \
+  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON neutron.* TO 'neutron'@'%' \
+  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> exit
+```
+
+- 	Tạo thông tin xác thực dịch vụ cho neutron
+
+```sh
+root@controller:~# openstack user create --domain default --password-prompt neutron
+root@controller:~# openstack role add --project service --user neutron admin
+root@controller:~# openstack service create --name neutron \
+  --description "OpenStack Networking" network
+root@controller:~# openstack endpoint create --region RegionOne \
+  network public http://controller:9696
+root@controller:~# openstack endpoint create --region RegionOne \
+  network internal http://controller:9696
+root@controller:~# openstack endpoint create --region RegionOne \
+  network admin http://controller:9696
+```
+
+- 	Cài đặt dịch vụ neutron
+```sh
+root@controller:~# apt -y install neutron-server neutron-metadata-agent neutron-plugin-ml2 python3-neutronclient
+```
+
+- Chỉnh sửa file cấu hình dịch vụ netron
+
+```sh
+root@controller:~# vim /etc/neutron/neutron.conf
+
+[DEFAULT]
+core_plugin = ml2
+service_plugins = router
+allow_overlapping_ips = true
+transport_url = rabbit://openstack:lean15998@controller
+auth_strategy = keystone
+notify_nova_on_port_status_changes = true
+notify_nova_on_port_data_changes = true
+
+[keystone_authtoken]
+www_authenticate_uri = http://controller:5000
+auth_url = http://controller:5000
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = neutron
+password = lean15998
+
+[database]
+connection = mysql+pymysql://neutron:lean15998@controller/neutron
+
+[nova]
+auth_url = http://controller:5000
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+region_name = RegionOne
+project_name = service
+username = nova
+password = lean15998
+
+[oslo_concurrency]
+lock_path = /var/lib/neutron/tmp
+```
+
+```sh
+
+root@controller:~# vim /etc/neutron/metadata_agent.ini
+
+[DEFAULT]
+nova_metadata_host = 10.0.0.30
+metadata_proxy_shared_secret = lean15998
+
+```
+```sh
+root@controller:~# vim /etc/neutron/plugins/ml2/ml2_conf.ini
+
+[ml2]
+type_drivers = flat,vlan,vxlan
+tenant_network_types = vxlan
+mechanism_drivers = linuxbridge
+extension_drivers = port_security
+
+[ml2_type_flat]
+flat_networks = provider
+
+[ml2_type_vxlan]
+vni_ranges = 1:1000
+```
+```sh
+root@controller:~# vi /etc/nova/nova.conf
+
+[DEFAULT]
+use_neutron = True
+
+[neutron]
+auth_url = http://10.0.0.30:5000
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+region_name = RegionOne
+project_name = service
+username = neutron
+password = lean15998
+service_metadata_proxy = True
+metadata_proxy_shared_secret = lean15998
+```
+
+
+- Populate vào CSDL neutron
+
+```sh
+root@controller:~# su -s /bin/sh -c "neutron-db-manage --config-file /etc/neutron/neutron.conf \
+  --config-file /etc/neutron/plugins/ml2/ml2_conf.ini upgrade head" neutron
+```
+
+- Khởi động lại dịch vụ
+
+```sh
+root@controller:~# systemctl restart neutron-server neutron-metadata-agent nova-api
+root@controller:~# systemctl enable neutron-server neutron-metadata-agent
+```
+
+#### Trên node network
+
+- 	Cài đặt dịch vụ neutron
+```sh
+root@network:~# apt -y install neutron-plugin-ml2 neutron-linuxbridge-agent neutron-l3-agent neutron-dhcp-agent neutron-metadata-agent python3-neutronclient
+```
+
+- Chỉnh sửa file cấu hình dịch vụ netron
+
+```sh
+root@network:~# vim /etc/neutron/neutron.conf
+
+[DEFAULT]
+core_plugin = ml2
+service_plugins = router
+auth_strategy = keystone
+state_path = /var/lib/neutron
+allow_overlapping_ips = True
+# RabbitMQ connection info
+transport_url = rabbit://openstack:lean15998@10.0.0.30
+
+[keystone_authtoken]
+www_authenticate_uri = http://controller:5000
+auth_url = http://controller:5000
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = neutron
+password = lean15998
+
+[oslo_concurrency]
+lock_path = /var/lib/neutron/tmp
+```
+
+```sh
+root@network:~# vi /etc/neutron/l3_agent.ini
+
+[DEFAULT]
+interface_driver = linuxbridge
+
+```
+```sh
+root@network:~# vim /etc/neutron/dhcp_agent.ini
+
+[DEFAULT]
+interface_driver = linuxbridge
+dhcp_driver = neutron.agent.linux.dhcp.Dnsmasq
+enable_isolated_metadata = true
+```
+
+```sh
+root@network:~# vi /etc/neutron/metadata_agent.ini
+
+[DEFAULT]
+nova_metadata_host = 10.0.0.30
+metadata_proxy_shared_secret = lean15998
+```
+
+```sh
+root@network:~# vi /etc/neutron/plugins/ml2/ml2_conf.ini
+
+[ml2]
+type_drivers = flat,vlan,vxlan
+tenant_network_types = vxlan
+mechanism_drivers = linuxbridge
+extension_drivers = port_security
+
+[ml2_type_flat]
+flat_networks = provider
+
+[ml2_type_vxlan]
+vni_ranges = 1:1000
+```
+
+```sh
+root@network:~# vi /etc/neutron/plugins/ml2/linuxbridge_agent.ini
+
+[agent]
+prevent_arp_spoofing = True
+
+[linux_bridge]
+physical_interface_mappings = provider:ens33
+
+[securitygroup]
+enable_security_group = true
+firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
+
+[vxlan]
+enable_vxlan = true
+local_ip = 10.0.0.52
+```
+
+- Khởi động lại dịch vụ
+
+```sh
+root@network:~# for service in l3-agent dhcp-agent metadata-agent linuxbridge-agent; do
+systemctl restart neutron-$service
+systemctl enable neutron-$service
+done
+```
+
+
+#### Trên node compute
+
+- 	Cài đặt dịch vụ neutron
+```sh
+root@compute:~# apt -y install neutron-common neutron-plugin-ml2 neutron-linuxbridge-agent
+```
+
+- Chỉnh sửa file cấu hình dịch vụ netron
+
+```sh
+root@compute:~# vi /etc/neutron/neutron.conf
+
+[DEFAULT]
+core_plugin = ml2
+service_plugins = router
+auth_strategy = keystone
+state_path = /var/lib/neutron
+allow_overlapping_ips = True
+# RabbitMQ connection info
+transport_url = rabbit://openstack:lean15998@controller
+
+[keystone_authtoken]
+www_authenticate_uri = http://controller:5000
+auth_url = http://controller:5000
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+project_name = service
+username = neutron
+password = lean15998
+
+[oslo_concurrency]
+lock_path = /var/lib/neutron/tmp
+```
+
+```sh
+root@compute:~# vi /etc/neutron/plugins/ml2/ml2_conf.ini
+
+[ml2]
+type_drivers = flat,vlan,vxlan
+tenant_network_types = vxlan
+mechanism_drivers = linuxbridge
+extension_drivers = port_security
+
+[ml2_type_flat]
+flat_networks = provider
+
+[ml2_type_vxlan]
+vni_ranges = 1:1000
+```
+
+```sh
+root@compute:~# vi /etc/neutron/plugins/ml2/linuxbridge_agent.ini
+
+[agent]
+prevent_arp_spoofing = True
+
+[securitygroup]
+enable_security_group = true
+firewall_driver = neutron.agent.linux.iptables_firewall.IptablesFirewallDriver
+
+[vxlan]
+enable_vxlan = true
+local_ip = 10.0.0.51
+```
+
+```sh
+root@compute:~# vi /etc/nova/nova.conf
+
+[DEFAULT]
+use_neutron = True
+
+[neutron]
+auth_url = http://controller:5000
+auth_type = password
+project_domain_name = default
+user_domain_name = default
+region_name = RegionOne
+project_name = service
+username = neutron
+password = lean15998
+service_metadata_proxy = true
+metadata_proxy_shared_secret = lean15998
+```
+
+- Khởi động lại dịch vụ
+
+```sh
+root@compute:~# systemctl restart nova-compute neutron-linuxbridge-agent
+root@compute:~# systemctl enable neutron-linuxbridge-agent
+```
+
+#### Trên node controller
+
+- Danh sách neutron agent
+
+```sh
+root@controller:~# openstack network agent list
++--------------------------------------+--------------------+------------+-------------------+-------+-------+---------------------------+
+| ID                                   | Agent Type         | Host       | Availability Zone | Alive | State | Binary                    |
++--------------------------------------+--------------------+------------+-------------------+-------+-------+---------------------------+
+| 1d3e83ec-88d7-4c36-a284-aa320fd989dc | DHCP agent         | network    | nova              | :-)   | UP    | neutron-dhcp-agent        |
+| 57d55b5b-cedf-4797-bff7-981186c55cd0 | Linux bridge agent | compute    | None              | :-)   | UP    | neutron-linuxbridge-agent |
+| 6f4100fb-2d8f-47c3-9722-6a2b1db2fa52 | Metadata agent     | controller | None              | :-)   | UP    | neutron-metadata-agent    |
+| 7278ca22-157e-4c8e-8b1a-fa411bf4ae29 | L3 agent           | network    | nova              | :-)   | UP    | neutron-l3-agent          |
+| b464d34d-2bd2-4c45-8abe-0c74b241a368 | Linux bridge agent | network    | None              | :-)   | UP    | neutron-linuxbridge-agent |
+| ba959d89-8134-446b-9d80-d8154b5db756 | Metadata agent     | network    | None              | :-)   | UP    | neutron-metadata-agent    |
++--------------------------------------+--------------------+------------+-------------------+-------+-------+---------------------------+
+```
+
+- Tạo internal network và external network
+
+```sh
+root@controller:~# openstack router create router01
++-------------------------+--------------------------------------+
+| Field                   | Value                                |
++-------------------------+--------------------------------------+
+| admin_state_up          | UP                                   |
+| availability_zone_hints |                                      |
+| availability_zones      |                                      |
+| created_at              | 2022-03-01T03:02:49Z                 |
+| description             |                                      |
+| distributed             | False                                |
+| external_gateway_info   | null                                 |
+| flavor_id               | None                                 |
+| ha                      | False                                |
+| id                      | 45bae2ed-bae4-4937-9f85-88409fa2f43c |
+| name                    | router01                             |
+| project_id              | f99cdd3d3d1344ba858ff4beb80fe624     |
+| revision_number         | 1                                    |
+| routes                  |                                      |
+| status                  | ACTIVE                               |
+| tags                    |                                      |
+| updated_at              | 2022-03-01T03:02:49Z                 |
++-------------------------+--------------------------------------+
+root@controller:~# openstack network create private --provider-network-type vxlan
++---------------------------+--------------------------------------+
+| Field                     | Value                                |
++---------------------------+--------------------------------------+
+| admin_state_up            | UP                                   |
+| availability_zone_hints   |                                      |
+| availability_zones        |                                      |
+| created_at                | 2022-03-01T03:02:55Z                 |
+| description               |                                      |
+| dns_domain                | None                                 |
+| id                        | 48febb12-db06-4ec2-bdc5-df28277688b0 |
+| ipv4_address_scope        | None                                 |
+| ipv6_address_scope        | None                                 |
+| is_default                | False                                |
+| is_vlan_transparent       | None                                 |
+| mtu                       | 1450                                 |
+| name                      | private                              |
+| port_security_enabled     | True                                 |
+| project_id                | f99cdd3d3d1344ba858ff4beb80fe624     |
+| provider:network_type     | vxlan                                |
+| provider:physical_network | None                                 |
+| provider:segmentation_id  | 1                                    |
+| qos_policy_id             | None                                 |
+| revision_number           | 1                                    |
+| router:external           | Internal                             |
+| segments                  | None                                 |
+| shared                    | False                                |
+| status                    | ACTIVE                               |
+| subnets                   |                                      |
+| tags                      |                                      |
+| updated_at                | 2022-03-01T03:02:55Z                 |
++---------------------------+--------------------------------------+
+root@controller:~# openstack subnet create private-subnet --network private \
+> --subnet-range 192.168.100.0/24 --gateway 192.168.100.1
++----------------------+--------------------------------------+
+| Field                | Value                                |
++----------------------+--------------------------------------+
+| allocation_pools     | 192.168.100.2-192.168.100.254        |
+| cidr                 | 192.168.100.0/24                     |
+| created_at           | 2022-03-01T03:03:13Z                 |
+| description          |                                      |
+| dns_nameservers      |                                      |
+| dns_publish_fixed_ip | None                                 |
+| enable_dhcp          | True                                 |
+| gateway_ip           | 192.168.100.1                        |
+| host_routes          |                                      |
+| id                   | fc77e167-5507-43ea-9cca-deb65b7ad937 |
+| ip_version           | 4                                    |
+| ipv6_address_mode    | None                                 |
+| ipv6_ra_mode         | None                                 |
+| name                 | private-subnet                       |
+| network_id           | 48febb12-db06-4ec2-bdc5-df28277688b0 |
+| prefix_length        | None                                 |
+| project_id           | f99cdd3d3d1344ba858ff4beb80fe624     |
+| revision_number      | 0                                    |
+| segment_id           | None                                 |
+| service_types        |                                      |
+| subnetpool_id        | None                                 |
+| tags                 |                                      |
+| updated_at           | 2022-03-01T03:03:13Z                 |
++----------------------+--------------------------------------+
+root@controller:~# openstack router add subnet router01 private-subnet
+root@controller:~# openstack network create \
+> --provider-physical-network provider \
+> --provider-network-type flat --external public
++---------------------------+--------------------------------------+
+| Field                     | Value                                |
++---------------------------+--------------------------------------+
+| admin_state_up            | UP                                   |
+| availability_zone_hints   |                                      |
+| availability_zones        |                                      |
+| created_at                | 2022-03-01T03:03:37Z                 |
+| description               |                                      |
+| dns_domain                | None                                 |
+| id                        | dc2a492f-5068-4d55-bbe6-5340e1faf830 |
+| ipv4_address_scope        | None                                 |
+| ipv6_address_scope        | None                                 |
+| is_default                | False                                |
+| is_vlan_transparent       | None                                 |
+| mtu                       | 1500                                 |
+| name                      | public                               |
+| port_security_enabled     | True                                 |
+| project_id                | f99cdd3d3d1344ba858ff4beb80fe624     |
+| provider:network_type     | flat                                 |
+| provider:physical_network | provider                             |
+| provider:segmentation_id  | None                                 |
+| qos_policy_id             | None                                 |
+| revision_number           | 1                                    |
+| router:external           | External                             |
+| segments                  | None                                 |
+| shared                    | False                                |
+| status                    | ACTIVE                               |
+| subnets                   |                                      |
+| tags                      |                                      |
+| updated_at                | 2022-03-01T03:03:37Z                 |
++---------------------------+--------------------------------------+
+root@controller:~# openstack subnet create public-subnet \
+> --network public --subnet-range 10.0.0.0/24 \
+> --allocation-pool start=10.0.0.200,end=10.0.0.254
++----------------------+--------------------------------------+
+| Field                | Value                                |
++----------------------+--------------------------------------+
+| allocation_pools     | 10.0.0.200-10.0.0.254                |
+| cidr                 | 10.0.0.0/24                          |
+| created_at           | 2022-03-01T03:03:49Z                 |
+| description          |                                      |
+| dns_nameservers      |                                      |
+| dns_publish_fixed_ip | None                                 |
+| enable_dhcp          | True                                 |
+| gateway_ip           | 10.0.0.1                             |
+| host_routes          |                                      |
+| id                   | d98cafaf-e187-405f-9d48-5604ab971eb9 |
+| ip_version           | 4                                    |
+| ipv6_address_mode    | None                                 |
+| ipv6_ra_mode         | None                                 |
+| name                 | public-subnet                        |
+| network_id           | dc2a492f-5068-4d55-bbe6-5340e1faf830 |
+| prefix_length        | None                                 |
+| project_id           | f99cdd3d3d1344ba858ff4beb80fe624     |
+| revision_number      | 0                                    |
+| segment_id           | None                                 |
+| service_types        |                                      |
+| subnetpool_id        | None                                 |
+| tags                 |                                      |
+| updated_at           | 2022-03-01T03:03:49Z                 |
++----------------------+--------------------------------------+
+root@controller:~# openstack router set router01 --external-gateway public
+```
+
+
