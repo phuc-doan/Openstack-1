@@ -1327,3 +1327,42 @@ root@controller:~# openstack volume service list
 +------------------+-------------+------+---------+-------+----------------------------+
 ```
 
+### Cài đặt Dashboard (Horizon)
+#### Trên node controller
+
+- Cài đặt openstack-dashboard
+
+ ```sh
+ root@controller:~# apt -y install openstack-dashboard
+ ```
+- Cấu hình Openstack dashboard
+
+```sh
+root@controller:~# vi /etc/openstack-dashboard/local_settings.py
+
+# line 99: change Memcache server
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.memcached.MemcachedCache',
+        'LOCATION': '10.0.0.30:11211',
+    },
+}
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+
+# line 126: set Openstack Host
+# line 127: comment out and add a line to specify URL of Keystone Host
+OPENSTACK_HOST = "10.0.0.30"
+#OPENSTACK_KEYSTONE_URL = "http://%s/identity/v3" % OPENSTACK_HOST
+OPENSTACK_KEYSTONE_URL = "http://10.0.0.30:5000/v3"
+```
+
+- Khởi động lại dịch vụ apache
+
+```sh
+root@controller:~# systemctl restart apache2
+```
+#### Một số hình ảnh của dashboard
+
+<img src="">
+<img src="">
+<img src="">
