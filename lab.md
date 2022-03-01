@@ -9,8 +9,8 @@
    |  MariaDB    RabbitMQ  |   |        L2 Agent       |   |        Libvirt        |   |     Cinder-volume     |
    |  Memcached  Apache2   |   |        L3 Agent       |   |     Nova Compute      |   |                       |
    |  Keystone   Glance    |   |     Metadata Agent    |   |        L2 Agent       |   |                       |
-   | Placement API Nova API|   |                       |   |                       |   |                       |
-   |  Neutron Server       |   |                       |   |                       |   |                       |
+   | Placement API Nova API|   |       DHCP Agent      |   |  Linux Bridge Agent   |   |                       |
+   |  Neutron Server       |   |  Linux Bridge Agent   |   |                       |   |                       |
    |  Metadata Agent       |   |                       |   |                       |   |                       | 
    +-----------------------+   +-----------------------+   +----------+------------+   +-----------------------+
                                            |
@@ -163,7 +163,7 @@ root@compute:~# apt install python3-openstackclient
 # Cài đặt dịch vụ Openstack
 
 ### Cài đặt dịch vụ identity (Keystone)
-
+#### Trên node controller
 - Khởi tạo database cho keystone
 ```sh
 root@controller:~# mysql
@@ -268,7 +268,7 @@ root@controller:~# openstack project show service
 ```
 
 ### Cài đặt dịch vụ image (Glance)
-
+#### Trên node controller
 - Khởi tạo database cho glance
 ```sh
 root@controller:~# mysql
@@ -356,7 +356,7 @@ root@controller:~# openstack image list
 
 
 ### Cài đặt dịch vụ Placement
-
+#### Trên node controller
 - Khởi tạo database cho placement
 ```sh
 root@controller:~# mysql
