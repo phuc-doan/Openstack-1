@@ -420,8 +420,205 @@ root@controller:~# su -s /bin/sh -c "placement-manage db sync" placement
 root@controller:~# service apache2 restart
 ```
 
+### Cài đặt dịch vụ Compute (Nova)
+
+#### Trên node Controller
+
+- Khởi tạo database cho nova
+```sh
+root@controller:~# mysql
+MariaDB [(none)]> CREATE DATABASE nova_api;
+MariaDB [(none)]> CREATE DATABASE nova;
+MariaDB [(none)]> CREATE DATABASE nova_cell0;
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON nova_api.* TO 'nova'@'localhost' \
+  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON nova_api.* TO 'nova'@'%' \
+  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'localhost' \
+  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'%' \
+  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON nova_cell0.* TO 'nova'@'localhost' \
+  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> GRANT ALL PRIVILEGES ON nova_cell0.* TO 'nova'@'%' \
+  IDENTIFIED BY 'lean15998';
+MariaDB [(none)]> exit
+```
+
+- 	Tạo thông tin xác thực dịch vụ cho nova
+
+```sh
+root@controller:~# openstack user create --domain default --password-prompt nova
+root@controller:~# openstack role add --project service --user nova admin
+root@controller:~# openstack service create --name nova \
+  --description "OpenStack Compute" compute
+root@controller:~# openstack endpoint create --region RegionOne \
+  compute public http://controller:8774/v2.1
+root@controller:~# openstack endpoint create --region RegionOne \
+  compute internal http://controller:8774/v2.1
+root@controller:~# openstack endpoint create --region RegionOne \
+  compute admin http://controller:8774/v2.1
+```
+
+- 	Cài đặt dịch vụ nova
+```sh
+root@controller:~# apt install nova-api nova-conductor nova-novncproxy nova-scheduler
+```
+
+- Chỉnh sửa file cấu hình dịch vụ nova
+
+```sh
+root@controller:~# vim /etc/nova/nova.conf
 
 
+[DEFAULT]
+transport_url = rabbit://openstack:lean15998@controller:5672/
+my_ip = 10.0.0.30
+[api_database]
+connection = mysql+pymysql://nova:lean15998@controller/nova_api
+
+[database]
+connection = mysql+pymysql://nova:lean15998@controller/nova
+
+[api]
+auth_strategy = keystone
+
+[keystone_authtoken] //thông tin truy cập keystone
+auth_url = http://controller:5000/v3
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = Default
+user_domain_name = Default
+project_name = service
+username = placement
+password = lean15998
+
+[vnc]
+enabled = true
+# ...
+server_listen = $my_ip
+server_proxyclient_address = $my_ip
+
+[glance]  //configure the location of the Image service API
+# ...
+api_servers = http://controller:9292
+
+[oslo_concurrency]
+# ...
+lock_path = /var/lib/nova/tmp
+
+[placement]  // truy cập placement
+# ...
+region_name = RegionOne
+project_domain_name = Default
+project_name = service
+auth_type = password
+user_domain_name = Default
+auth_url = http://controller:5000/v3
+username = placement
+password = lean15998
+```
 
 
+- Populate vào CSDL nova-api, nova và đăng ký database cell0 và cell1
 
+```sh
+root@controller:~# su -s /bin/sh -c "nova-manage api_db sync" nova
+root@controller:~# su -s /bin/sh -c "nova-manage cell_v2 map_cell0" nova
+root@controller:~# su -s /bin/sh -c "nova-manage cell_v2 create_cell --name=cell1 --verbose" nova
+root@controller:~# su -s /bin/sh -c "nova-manage db sync" nova
+```
+
+- Khởi động lại dịch vụ
+
+```sh
+root@controller:~# service nova-api restart
+root@controller:~# service nova-scheduler restart
+root@controller:~# service nova-conductor restart
+root@controller:~# service nova-novncproxy restart
+```
+
+
+#### Trên node compute
+
+- 	Cài đặt dịch vụ nova-compute
+```sh
+root@compute:~# apt install nova-compute
+```
+
+- Chỉnh sửa file cấu hình dịch vụ nova
+
+```sh
+root@compute:~# vim /etc/nova/nova.conf
+
+
+[DEFAULT]
+transport_url = rabbit://openstack:lean15998@controller:5672/
+my_ip = 10.0.0.51
+
+[api]
+auth_strategy = keystone
+
+[keystone_authtoken] //thông tin truy cập keystone
+auth_url = http://controller:5000/v3
+memcached_servers = controller:11211
+auth_type = password
+project_domain_name = Default
+user_domain_name = Default
+project_name = service
+username = placement
+password = lean15998
+
+[vnc]
+enabled = true
+server_listen = 0.0.0.0
+server_proxyclient_address = $my_ip
+novncproxy_base_url = http://10.0.0.30:6080/vnc_auto.html
+
+[glance]  //configure the location of the Image service API
+# ...
+api_servers = http://controller:9292
+
+[oslo_concurrency]
+# ...
+lock_path = /var/lib/nova/tmp
+
+[placement]  // truy cập placement
+# ...
+region_name = RegionOne
+project_domain_name = Default
+project_name = service
+auth_type = password
+user_domain_name = Default
+auth_url = http://controller:5000/v3
+username = placement
+password = lean15998
+```
+
+- Cấu hình nova-compute
+
+```sh
+root@compute:~# vim /etc/nova/nova-compute.conf
+
+[libvirt]
+virt_type = qemu
+```
+
+
+- Khởi động lại dịch vụ
+
+```sh
+root@compute:~# service nova-compute restart
+```
+
+#### Trên node Controller (Thêm node compute vào cell database)
+
+```sh
+root@controller:~# openstack compute service list --service nova-compute
++----+--------------+------------+------+---------+-------+----------------------------+
+| ID | Binary       | Host       | Zone | Status  | State | Updated At                 |
++----+--------------+------------+------+---------+-------+----------------------------+
+|  6 | nova-compute | compute    | nova | enabled | up    | 2022-03-01T02:30:23.000000 |
++----+--------------+------------+------+---------+-------+----------------------------+
+root@controller:~# su -s /bin/sh -c "nova-manage cell_v2 discover_hosts --verbose" nova
+```
