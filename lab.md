@@ -5,9 +5,9 @@
           ens38|10.0.0.30             ens38|10.0.0.50             ens38|10.0.0.51             ens38| 10.0.0.52
    +-----------+-----------+   +-----------+-----------+   +-----------+-----------+   +-----------+-----------+
    |    [ Control Node ]   |   |    [ Network Node ]   |   |    [ Compute Node ]   |   |    [ Storage Node ]   |
-   |                       |   |                       |   |                       |   |          lvm2         |
+   |                       |   |                       |   |                       |   |                       |
    |  MariaDB    RabbitMQ  |   |        L2 Agent       |   |        Libvirt        |   |     Cinder-volume     |
-   |  Memcached  Apache2   |   |        L3 Agent       |   |     Nova Compute      |   |                       |
+   |  Memcached  Apache2   |   |        L3 Agent       |   |     Nova Compute      |   |          lvm2         |
    |  Keystone   Glance    |   |     Metadata Agent    |   |        L2 Agent       |   |                       |
    | Placement API Nova API|   |       DHCP Agent      |   |  Linux Bridge Agent   |   |                       |
    |  Neutron Server       |   |  Linux Bridge Agent   |   |                       |   |                       |
