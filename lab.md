@@ -24,6 +24,9 @@
 ```sh
 root@controller:~# vim /etc/hosts
 10.0.0.30       controller
+10.0.0.50       network
+10.0.0.51       compute
+10.0.0.52       storage
 ```
 #### 2. Cài đặt Chrony (Đồng bộ hoá thời gian)
 
@@ -1274,7 +1277,7 @@ lock_path = /var/lock/cinder
 volumes_dir = /var/lib/cinder/volumes
 enabled_backends = lvm
 transport_url = rabbit://openstack:lean15998@controller
-my_ip = 10.0.0.53
+my_ip = 10.0.0.52
 glance_api_servers = http://controller:9292
 
 [database]
@@ -1363,6 +1366,6 @@ root@controller:~# systemctl restart apache2
 ```
 #### Một số hình ảnh của dashboard
 
-<img src="">
-<img src="">
-<img src="">
+<img src="https://github.com/lean15998/Openstack/blob/main/images/49.PNG">
+<img src="https://github.com/lean15998/Openstack/blob/main/images/50.PNG">
+<img src="https://github.com/lean15998/Openstack/blob/main/images/51.PNG">
