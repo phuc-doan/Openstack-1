@@ -435,7 +435,7 @@ MariaDB [(none)]> CREATE DATABASE nova;
 MariaDB [(none)]> CREATE DATABASE nova_cell0;
 MariaDB [(none)]> GRANT ALL PRIVILEGES ON nova_api.* TO 'nova'@'localhost' \
   IDENTIFIED BY 'lean15998';
-MariaDB [(none)]> GRANT ALL PRIVILEGES ON nova_api.* TO 'nova'@'%' \
+MariaDB [(none)]> 
   IDENTIFIED BY 'lean15998';
 MariaDB [(none)]> GRANT ALL PRIVILEGES ON nova.* TO 'nova'@'localhost' \
   IDENTIFIED BY 'lean15998';
